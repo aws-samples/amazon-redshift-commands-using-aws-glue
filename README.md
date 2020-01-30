@@ -16,9 +16,9 @@ The following are the re-usable components of the AWS Cloud Formation Template:
 1. **Amazon VPC Endpoint** - The Amazon VPC Endpoint is deployed to ensure that the Secrets Manager is accessible from the same Amazon VPC as the AWS Glue Job and Amazon Redshift Cluster.
 1. **IAM Role** - This IAM Role is used by the AWS Glue job and requires read access to the Secrets Manager Secret as well as the Amazon S3 location of the python script used in the AWS Glue Job and the Amazon Redshift script.
 1. **AWS Glue Job** - This AWS Glue Job will be the compute engine to execute your script. AWS Glue Python Shell jobs are optimal for this type of workload because there is no timeout and it has a very small cost per execution second. The job will take two required parameters and one optional parameter:
-  1. *Secret* - The Secrets Manager Secret ARN containing the Amazon Redshift connection information.
-  1. *SQLScript* - The Amazon S3 Script Loction of the Script in S3 containing the Redshift Script.  Note: The Role created above should have access to read from this location.
-  1. *Params* - (Optional) A comma separated list of script parameters.  To use these parameters in your script use the syntax ${n}.
+* *Secret* - The Secrets Manager Secret ARN containing the Amazon Redshift connection information.
+* *SQLScript* - The Amazon S3 Script Loction of the Script in S3 containing the Redshift Script.  Note: The Role created above should have access to read from this location.
+* *Params* - (Optional) A comma separated list of script parameters.  To use these parameters in your script use the syntax ${n}.
 
 ## Sample Job
 Also included in the CloudFormation Template is a sample invocation of the AWS Glue job.  The template will invoke the AWS Glue Job with the following inputs.
