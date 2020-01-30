@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  DatabaseHostName:
+    Description: The hostname on which the cluster accepts incoming connections.
+    Type: String
+  MasterUsername:
+    Description: The user name which will be used to execute the SQL Script.
+    Type: String
+    AllowedPattern: "([a-z])([a-z]|[0-9])*"
+  MasterUserPassword:
+    Description: The password which will be used to execute the SQL Script.
+    Type: String
+    NoEcho: 'true'
+  PortNumber:
+    Description: The port number on which the cluster accepts incoming connections.
+    Type: Number
+    Default: '5439'
+  DatabaseName:
+    Description: The name of the database which will be used to execute the SQL Script.
+      created
+    Type: String
+    AllowedPattern: "([a-z]|[0-9])+"
+  VPC:
+    Description: The VPC Redshift is running in.
+    Type: AWS::EC2::VPC::Id
+  PublicSubnet:
+    Description: The Subnet Redshift is running in.
+    Type: AWS::EC2::Subnet::Id
+  AvailabilityZone:
+    Description: The Availability Zone Redshift is running in.
+    Type: AWS::EC2::AvailabilityZone::Name
+  SecurityGroup:
+    Description: The Security Group which provides access to Redshift.
+    Type: AWS::EC2::SecurityGroup::Id
+  SampleJob:
+    Description: If enabled, a sample job will be created which loads createa a customer_[stackname] table into the public schema.  The script for the job can be found here at s3://redshift-immersionday-labs/customer.sql
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: false
+Conditions:
+  IsSampleJob:
+    Fn::Equals:
+    - Ref: SampleJob
+    - true
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Network Details"
+        Parameters:
+          - VPC
+          - RedshiftAZ
+          - PublicSubnet
+          - SecurityGroup
+          - AvailabilityZone
+      -
+        Label:
+          default: "Connection Details"
+        Parameters:
+          - DatabaseHostName
+          - MasterUsername
+          - MasterUserPassword
+          - PortNumber
+          - DatabaseName
+      -
+        Label:
+          default: "Sample Execution"
+        Parameters:
+          - SampleJob
+Resources:
+  SecretManagerVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    #Not actual dependencies, just to ensure this resource is created last
+    DependsOn:
+      - GlueConnection
+    Properties:
+      SecurityGroupIds:
+        - Ref: SecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
+      SubnetIds:
+        - Ref: PublicSubnet
+      VpcEndpointType: Interface
+      VpcId:
+        Ref: VPC
+  GlueLoadRedshiftRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            -
+              Effect: Allow
+              Principal:
+                Service:
+                  - glue.amazonaws.com
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+      Path: /
+      Policies:
+          -
+            PolicyName: LambdaLoadRedshiftPolicy
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                -
+                  Effect: Allow
+                  Action:
+                    - s3:*
+                  Resource:
+                    - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}"
+                    - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}"
+                    - !Sub "arn:aws:s3:::cloudformation-custom-resource-response-${AWS::Region}/*"
+                    - !Sub "arn:aws:s3:::cloudformation-waitcondition-${AWS::Region}/*"
+          -
+            PolicyName: GlueGetSecretPolicy
+            PolicyDocument :
+              Version: 2012-10-17
+              Statement:
+                -
+                  Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource:
+                    - Ref: Secret
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+  Secret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Secret for Redshift Command Glue Job.
+      SecretString: !Sub
+        - "{\"user\": \"${user}\", \"password\": \"${pass}\", \"host\": \"${host}\", \"database\": \"${db}\", \"port\": \"${port}\"}"
+        - {user: !Ref MasterUsername, pass: !Ref MasterUserPassword, host: !Ref DatabaseHostName, db: !Ref DatabaseName, port: !Ref PortNumber}
+  GlueConnection:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      ConnectionInput:
+        Description: "Connect to VPC where Redshift is running."
+        ConnectionType: "JDBC"
+        ConnectionProperties: {
+          "JDBC_CONNECTION_URL": "jdbc:redshift://host:9999/db",
+          "USERNAME": "user",
+          "PASSWORD": "password"
+        }
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList:
+            - Ref: SecurityGroup
+          SubnetId:
+            Ref: PublicSubnet
+          AvailabilityZone:
+            Ref: AvailabilityZone
+  GlueJobRedshiftCommands:
+    Type: AWS::Glue::Job
+    DependsOn:
+      - GlueConnection
+    Properties:
+      Name: RedshiftCommands
+      Role: !GetAtt 'GlueLoadRedshiftRole.Arn'
+      ExecutionProperty:
+        MaxConcurrentRuns: 10
+      Connections:
+        Connections:
+          - Ref: GlueConnection
+      Command:
+        Name: pythonshell
+        PythonVersion: 3
+        ScriptLocation: 's3://redshift-immersionday-labs/RedshiftCommands.py'
+  LambdaGlueJobRedshiftCommands:
+     Condition: IsSampleJob
+     Type: "AWS::Lambda::Function"
+     Properties:
+       FunctionName: TriggerGlueLoadRedshiftCommand
+       Role: !GetAtt 'GlueLoadRedshiftRole.Arn'
+       Timeout: 300
+       Code:
+         ZipFile: |
+           import json
+           import boto3
+           import cfnresponse
+           import logging
+
+           logging.basicConfig()
+           logger = logging.getLogger(__name__)
+           logger.setLevel(logging.INFO)
+
+           glue = boto3.client('glue')
+
+           def handler(event, context):
+             logger.info(json.dumps(event))
+             if event['RequestType'] != 'Create':
+                 cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'NA'})
+             else:
+                 try:
+                   sqlScript = event['ResourceProperties']['sqlScript']
+                   secret = event['ResourceProperties']['secret']
+                   params = event['ResourceProperties']['params']
+                   jobName = event['ResourceProperties']['jobName']
+
+                   response = glue.start_job_run(
+                     JobName=jobName,
+                     Arguments={
+                       '--SQLScript':sqlScript,
+                       '--Secret':secret,
+                       '--Params':params})
+
+                   message = 'Glue triggered successfully.'
+                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': message})
+
+                 except Exception as e:
+                   message = 'Glue Job Issue'
+                   logger.info(e)
+                   cfnresponse.send(event, context, cfnresponse.FAILED, {'Data': 'message'})
+       Handler: index.handler
+       Runtime: python3.7
+     DependsOn:
+       - GlueJobRedshiftCommands
+  InitGlueJobRedshiftCommands:
+     Condition: IsSampleJob
+     Type: Custom::InitGlueJobRedshiftCommands
+     DependsOn:
+       - LambdaGlueJobRedshiftCommands
+       - SecretManagerVPCEndpoint
+     Properties:
+       ServiceToken: !GetAtt 'LambdaGlueJobRedshiftCommands.Arn'
+       sqlScript: 's3://redshift-immersionday-labs/customer.sql'
+       secret: !Ref Secret
+       params: !Sub "${AWS::StackName}"
+       jobName: !Ref GlueJobRedshiftCommands
