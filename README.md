@@ -92,7 +92,7 @@ statements = obj.get()['Body'].read().decode('utf-8')
 ```
 
 ### Get the Optional parameters
-This code will first determine if the **Parms** input was provided, if so, it will get the value and replace the values matching the pattern ${n} in the *statements* variable.
+This code will first determine if the **Params** input was provided, if so, it will get the value and replace the values matching the pattern ${n} in the *statements* variable.
 ```Python
 params = ''
 if ('--{}'.format('Params') in sys.argv):
