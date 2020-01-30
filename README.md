@@ -1,6 +1,6 @@
 # Execute Amazon Redshift Commands using AWS Glue
 
-This project demonstrates how to use a **AWS Glue Python Shell Job** to connect to your Amazon Redshift cluster and execute a SQL script stored in Amazon S3.  Amazon Redshift SQL scripts can contain commands such as bulk loading using the COPY statement or data transformation using DDL & DML SQL statements.  Leveraging this strategy, customers can migrate from their existing ETL and ELT infrastructure to a more cost-effective serverless framework.   
+This project demonstrates how to use a **AWS Glue Python Shell Job** to connect to your **Amazon Redshift** cluster and execute a SQL script stored in Amazon S3.  Amazon Redshift SQL scripts can contain commands such as bulk loading using the COPY statement or data transformation using DDL & DML SQL statements.  Leveraging this strategy, customers can migrate from their existing ETL and ELT infrastructure to a more cost-effective serverless framework.   
 
 ## Cloud Formation
 
