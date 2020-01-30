@@ -6,7 +6,7 @@ This project demonstrates how to use a **AWS Glue Python Shell Job** to connect 
 
 The below **AWS Cloud Formation Template** will deploy the necessary components to build your first AWS Glue Job along with necessary components to ensure the connection between the various components is secure.  Once deployed, create AWS Glue triggers and/or workflows to invoke the **RedsdhiftCommands** job passing in any script you'd like.
 
-[![Launch](../cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=RedshiftCommands&templateURL=https://s3-us-west-2.amazonaws.com/redshift-immersionday-labs/RedshiftCommands.yaml)
+[![Launch](cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/new?stackName=RedshiftCommands&templateURL=https://s3-us-west-2.amazonaws.com/redshift-immersionday-labs/RedshiftCommands.yaml)
 
 ## Solution Components
 
