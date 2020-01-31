@@ -103,7 +103,7 @@ if ('--{}'.format('Params') in sys.argv):
 ```
 
 ### Run each Statement
-This code will parse each statement using the semicolon (;) as a delimiter.  In addition, it will replace any parameters in the statement.
+This code will parse and execute each statement using the semicolon (;) as a delimiter.
 ```Python
 for statement in statements.split(';'):
     statement = statement.strip()
