@@ -11,9 +11,10 @@ The below **AWS Cloud Formation Template** will deploy the necessary components 
 ## Solution Components
 
 The following are the re-usable components of the AWS Cloud Formation Template:
+1. **AWS Glue Bucket** - This bucket will hold the script which the AWS Glue Python Shell Job will execute.
 1. **AWS Glue Connection** - This connection is used to ensure the AWS Glue Job will run within the same Amazon VPC as Amazon Redshift Cluster.
 1. **Secrets Manager Secret** - This Secret is stored in the Secrets Manager and will contain the credentials to the Amazon Redshift cluster.
-1. **Amazon VPC Endpoint** - The Amazon VPC Endpoint is deployed to ensure that the Secrets Manager is accessible from the same Amazon VPC as the AWS Glue Job and Amazon Redshift Cluster.
+1. **Amazon VPC Endpoints** - 2 Amazon VPC Endpoints are deployed to ensure that Secrets Manager and S3 which are two services which run outside the VPC are accessible within the same Amazon VPC as the AWS Glue Job and Amazon Redshift Cluster.
 1. **IAM Role** - This IAM Role is used by the AWS Glue job and requires read access to the Secrets Manager Secret as well as the Amazon S3 location of the python script used in the AWS Glue Job and the Amazon Redshift script.
 1. **AWS Glue Job** - This AWS Glue Job will be the compute engine to execute your script. AWS Glue Python Shell jobs are optimal for this type of workload because there is no timeout and it has a very small cost per execution second. The job will take two required parameters and one optional parameter:
 * *Secret* - The Secrets Manager Secret ARN containing the Amazon Redshift connection information.
