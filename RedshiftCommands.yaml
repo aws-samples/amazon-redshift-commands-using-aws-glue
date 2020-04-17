@@ -19,16 +19,20 @@ Parameters:
     Description: The name of the database which will be used to execute the SQL Script.
       created
     Type: String
+    Default: 'dev'
     AllowedPattern: "([a-z]|[0-9])+"
   VPC:
     Description: The VPC Redshift is running in.
     Type: AWS::EC2::VPC::Id
-  PublicSubnet:
+  Subnet:
     Description: The Subnet Redshift is running in.
     Type: AWS::EC2::Subnet::Id
   AvailabilityZone:
     Description: The Availability Zone Redshift is running in.
     Type: AWS::EC2::AvailabilityZone::Name
+  RouteTable:
+    Description: The Route Table associated to the subnet which Redshift is running in.
+    Type: String
   SecurityGroup:
     Description: The Security Group which provides access to Redshift.
     Type: AWS::EC2::SecurityGroup::Id
@@ -52,10 +56,10 @@ Metadata:
           default: "Network Details"
         Parameters:
           - VPC
-          - RedshiftAZ
-          - PublicSubnet
-          - SecurityGroup
           - AvailabilityZone
+          - Subnet
+          - SecurityGroup
+          - RouteTable
       -
         Label:
           default: "Connection Details"
@@ -71,6 +75,8 @@ Metadata:
         Parameters:
           - SampleJob
 Resources:
+  GlueBucket:
+    Type: AWS::S3::Bucket
   SecretManagerVPCEndpoint:
     Type: AWS::EC2::VPCEndpoint
     #Not actual dependencies, just to ensure this resource is created last
@@ -79,10 +85,32 @@ Resources:
     Properties:
       SecurityGroupIds:
         - Ref: SecurityGroup
+      PrivateDnsEnabled: true
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
       SubnetIds:
-        - Ref: PublicSubnet
+        - Ref: Subnet
       VpcEndpointType: Interface
+      VpcId:
+        Ref: VPC
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    #Not actual dependencies, just to ensure this resource is created last
+    DependsOn:
+      - GlueConnection
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      PolicyDocument: '{
+        "Version":"2012-10-17",
+        "Statement":[{
+          "Effect":"Allow",
+          "Principal": "*",
+          "Action":"*",
+          "Resource":"*"
+        }]
+      }'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref RouteTable
       VpcId:
         Ref: VPC
   GlueLoadRedshiftRole:
@@ -127,7 +155,7 @@ Resources:
                   Resource:
                     - Ref: Secret
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
   Secret:
@@ -153,7 +181,7 @@ Resources:
           SecurityGroupIdList:
             - Ref: SecurityGroup
           SubnetId:
-            Ref: PublicSubnet
+            Ref: Subnet
           AvailabilityZone:
             Ref: AvailabilityZone
   GlueJobRedshiftCommands:
@@ -171,7 +199,15 @@ Resources:
       Command:
         Name: pythonshell
         PythonVersion: 3
-        ScriptLocation: 's3://redshift-immersionday-labs/RedshiftCommands.py'
+        ScriptLocation: !Sub
+          - s3://${bucket}/RedshiftCommands.py
+          - {bucket: !Ref GlueBucket}
+      DefaultArguments:
+        "--job-bookmark-option" : "job-bookmark-disable"
+        "--TempDir" : !Sub
+          - s3://${bucket}
+          - {bucket: !Ref GlueBucket}
+        "--enable-metrics" : ""
   LambdaGlueJobRedshiftCommands:
      Condition: IsSampleJob
      Type: "AWS::Lambda::Function"
@@ -220,16 +256,98 @@ Resources:
        Handler: index.handler
        Runtime: python3.7
      DependsOn:
-       - GlueJobRedshiftCommands
+       - GlueLoadRedshiftRole
+  LambdaFunctionS3Copy:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: S3Copy
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import logging
+
+          logging.basicConfig()
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+            logger.info(json.dumps(event))
+            s3 = boto3.client('s3')
+            s3BucketTarget = event['ResourceProperties']['s3BucketTarget']
+            s3Bucket = event['ResourceProperties']['s3Bucket']
+            s3Object = event['ResourceProperties']['s3Object']
+
+            if event['RequestType'] == 'Delete':
+              try:
+                s3.delete_object(Bucket=s3BucketTarget, Key=s3Object)
+              except Exception as e:
+                logger.info(e)
+
+              logger.info('Delete Complete')
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'Delete complete'})
+
+            else:
+              try:
+                s3.delete_object(Bucket=s3BucketTarget, Key=s3Object)
+              except Exception as e:
+                logger.info(e)
+              try:
+                s3.copy_object(Bucket=s3BucketTarget, CopySource=s3Bucket+"/"+s3Object, Key=s3Object)
+                logger.info('Copy Complete')
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Data': 'Copy complete'})
+
+              except Exception as e:
+                logger.error(e)
+                cfnresponse.send(event, context, cfnresponse.FAILED, {'Data': 'Copy failed'})
+
+      Handler: index.handler
+      Role:
+        Fn::GetAtt: [GlueLoadRedshiftRole, Arn]
+      Runtime: python3.7
+    DependsOn:
+      - GlueLoadRedshiftRole
+  ImportPyScript:
+    Type: Custom::CopyScript
+    DependsOn:
+      - LambdaFunctionS3Copy
+      - GlueBucket
+    Properties:
+      ServiceToken:
+        Fn::GetAtt : [LambdaFunctionS3Copy, Arn]
+      s3BucketTarget:
+        Ref: GlueBucket
+      s3Bucket: 'redshift-immersionday-labs'
+      s3Object: 'RedshiftCommands.py'
   InitGlueJobRedshiftCommands:
      Condition: IsSampleJob
      Type: Custom::InitGlueJobRedshiftCommands
      DependsOn:
        - LambdaGlueJobRedshiftCommands
+       - GlueJobRedshiftCommands
        - SecretManagerVPCEndpoint
+       - S3VPCEndpoint
+       - ImportPyScript
      Properties:
        ServiceToken: !GetAtt 'LambdaGlueJobRedshiftCommands.Arn'
-       sqlScript: 's3://redshift-immersionday-labs/customer.sql'
+       sqlScript: !Sub
+         - s3://${bucket}/customer.sql
+         - {bucket: !Ref GlueBucket}
        secret: !Ref Secret
        params: !Sub "${AWS::StackName}"
        jobName: !Ref GlueJobRedshiftCommands
+  ImportSqlScript:
+    Type: Custom::CopyScript
+    Condition: IsSampleJob
+    DependsOn:
+      - LambdaFunctionS3Copy
+      - GlueBucket
+    Properties:
+      ServiceToken:
+        Fn::GetAtt : [LambdaFunctionS3Copy, Arn]
+      s3BucketTarget:
+        Ref: GlueBucket
+      s3Bucket: 'redshift-immersionday-labs'
+      s3Object: 'customer.sql'
