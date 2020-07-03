@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: "2020-06-19"
+AWSTemplateFormatVersion: "2010-09-09"
 Description: "Service Catalog: Amazon Redshift Reference Architecture Template.  This template builds a AWS Glue Job which can connect to user supplied Redshift Cluster and execute either a sample scripts to load TPC-DS data or a user-provided script. See https://github.com/aws-samples/amazon-redshift-commands-using-aws-glue for more info. (fdp-redshift002)"
 Parameters:
   DatabaseHostName:
