@@ -27,7 +27,7 @@ Parameters:
     Type: String
     Default: 's3://redshift-demos/sql/redshift-tpcds.sql'
   ScriptParameters:
-    Description: A comma seperated list of parameters required by the script in the form of ${n}.  For the default script enter a Role which Redshift can assume and which as S3 Read Access.
+    Description: A comma seperated list of parameters required by the script in the form of ${n}.  For the default script enter a Role which is attached to the Redshift Cluster and which as S3 Read Access.  See the following reference more detail on creating a Role for Redshift https://docs.aws.amazon.com/redshift/latest/gsg/rs-gsg-create-an-iam-role.html.
     Type: String
     Default: 'arn:aws:iam::<account>:role/<rolename>'
 Conditions:
