@@ -56,6 +56,13 @@ Metadata:
 Resources:
   GlueBucket:
     Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
   LambdaCFNCustomRole:
     Type: AWS::IAM::Role
     Properties:
